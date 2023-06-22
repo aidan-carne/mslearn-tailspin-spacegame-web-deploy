@@ -3,13 +3,21 @@ trigger:
 - '*'
   
 variables:
-    buildConfiguration: 'Release'
-    releaseBranchName: 'release'
+  buildConfiguration: 'Release'
+  releaseBranchName: 'release'
+  
+schedules:
+- cron: '0 3 * * *'
+  displayName: 'Deploy every day at 3 A.M.'
+  branches:
+    include:
+    - release
+  always: false 
   
 stages:
-- stage: 'Build'
-  displayName: 'Build the web application'
-  jobs: 
+  - stage: 'Build'
+    displayName: 'Build the web application'
+    jobs: 
     - job: 'Build'
       displayName: 'Build job'
       pool:
@@ -67,16 +75,16 @@ stages:
       - publish: '$(Build.ArtifactStagingDirectory)'
         artifact: drop
   
-- stage: 'Dev'
-  displayName: 'Deploy to the dev environment'
-  dependsOn: Build
-  condition: |
+  - stage: 'Dev'
+    displayName: 'Deploy to the dev environment'
+    dependsOn: Build
+    condition: |
       and
       (
         succeeded(),
         eq(variables['Build.SourceBranchName'], variables['releaseBranchName'])
       )
-  jobs:
+    jobs:
     - deployment: Deploy
       pool:
         vmImage: 'ubuntu-20.04'
@@ -94,4 +102,28 @@ stages:
               inputs:
                 azureSubscription: 'Resource Manager - Tailspin - Space Game'
                 appName: '$(WebAppNameDev)'
+                package: '$(Pipeline.Workspace)/drop/$(buildConfiguration)/*.zip'
+  
+  - stage: 'Test'
+    displayName: 'Deploy to the test environment'
+    dependsOn: Dev
+    #condition: eq(variables['Build.Reason'], 'Schedule')
+    jobs:
+    - deployment: Deploy
+      pool:
+        vmImage: 'ubuntu-20.04'
+      environment: test
+      variables:
+      - group: 'Release'
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+            - download: current
+              artifact: drop
+            - task: AzureWebApp@1
+              displayName: 'Azure App Service Deploy: website'
+              inputs:
+                azureSubscription: 'Resource Manager - Tailspin - Space Game'
+                appName: '$(WebAppNameTest)'
                 package: '$(Pipeline.Workspace)/drop/$(buildConfiguration)/*.zip'
